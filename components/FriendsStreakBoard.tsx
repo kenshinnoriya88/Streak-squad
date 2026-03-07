@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { calcStreakForUser } from "./PersonalStreak";
+import { supabase } from "@/lib/supabase";
 
 interface Workout {
     id: string;
@@ -12,6 +13,7 @@ interface Workout {
 
 interface FriendsStreakBoardProps {
     workouts: Workout[];
+    currentUser?: string;
 }
 
 // ── JST日付キー生成 ──
@@ -47,8 +49,11 @@ interface MemberInfo {
 
 export default function FriendsStreakBoard({
     workouts,
+    currentUser,
 }: FriendsStreakBoardProps) {
     const todayKey = useMemo(() => toJstDayKey(new Date().toISOString()), []);
+    const [pokedNames, setPokedNames] = useState<Set<string>>(new Set());
+    const [pokingName, setPokingName] = useState<string | null>(null);
 
     const members: MemberInfo[] = useMemo(() => {
         // ユニークなユーザー名を収集
@@ -79,6 +84,27 @@ export default function FriendsStreakBoard({
             });
     }, [workouts, todayKey]);
 
+    const handlePoke = async (targetName: string) => {
+        if (!currentUser || pokingName) return;
+        setPokingName(targetName);
+        try {
+            const { error } = await supabase.from("notifications").insert({
+                recipient_name: targetName,
+                actor_name: currentUser,
+                type: "poke",
+            });
+            if (error) {
+                console.error("催促送信エラー:", error);
+                return;
+            }
+            setPokedNames((prev) => new Set(prev).add(targetName));
+        } catch (err) {
+            console.error("催促送信エラー:", err);
+        } finally {
+            setPokingName(null);
+        }
+    };
+
     if (members.length === 0) {
         return null;
     }
@@ -96,67 +122,94 @@ export default function FriendsStreakBoard({
 
             {/* メンバーリスト */}
             <div className="flex flex-col gap-2">
-                {members.map((m, i) => (
-                    <div
-                        key={m.name}
-                        className={`timeline-card flex items-center gap-3 rounded-xl border px-4 py-3 transition-all duration-300 ${m.doneToday
-                            ? "border-emerald-500/20 bg-emerald-500/5 hover:border-emerald-500/40"
-                            : "border-red-500/20 bg-red-500/5 hover:border-red-500/30"
-                            }`}
-                        style={{ animationDelay: `${i * 60}ms` }}
-                    >
-                        {/* アバター */}
+                {members.map((m, i) => {
+                    const isMe = currentUser === m.name;
+                    const alreadyPoked = pokedNames.has(m.name);
+                    const isPoking = pokingName === m.name;
+                    const showPokeBtn = !m.doneToday && !isMe && currentUser;
+
+                    return (
                         <div
-                            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${getAvatarColor(m.name)} text-sm font-bold text-white shadow-sm ${!m.doneToday ? "opacity-50 grayscale" : ""
+                            key={m.name}
+                            className={`timeline-card flex items-center gap-3 rounded-xl border px-4 py-3 transition-all duration-300 ${m.doneToday
+                                ? "border-emerald-500/20 bg-emerald-500/5 hover:border-emerald-500/40"
+                                : "border-red-500/20 bg-red-500/5 hover:border-red-500/30"
                                 }`}
+                            style={{ animationDelay: `${i * 60}ms` }}
                         >
-                            {m.name.charAt(0).toUpperCase()}
-                        </div>
-
-                        {/* 名前 + ステータス */}
-                        <div className="flex flex-1 flex-col">
-                            <span
-                                className={`text-sm font-semibold ${m.doneToday ? "text-white" : "text-zinc-500"}`}
-                            >
-                                {m.name}
-                            </span>
-                            <span
-                                className={`text-xs font-medium ${m.doneToday ? "text-emerald-400" : "text-red-400/80"
+                            {/* アバター */}
+                            <div
+                                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${getAvatarColor(m.name)} text-sm font-bold text-white shadow-sm ${!m.doneToday ? "opacity-50 grayscale" : ""
                                     }`}
                             >
-                                {m.doneToday ? "✅ 今日完了！" : "⚠️ 未完了"}
-                            </span>
-                        </div>
+                                {m.name.charAt(0).toUpperCase()}
+                            </div>
 
-                        {/* ストリーク */}
-                        <div className="flex items-center gap-1">
-                            <span
-                                className={`text-base transition-all ${m.streak > 0
-                                    ? "drop-shadow-[0_0_4px_rgba(249,115,22,0.5)]"
-                                    : "grayscale opacity-40"
-                                    }`}
-                            >
-                                🔥
-                            </span>
-                            <span
-                                className={`text-lg font-black tabular-nums ${m.streak > 0
-                                    ? "bg-gradient-to-r from-orange-400 to-amber-400 bg-clip-text text-transparent"
-                                    : "text-zinc-600"
-                                    }`}
-                            >
-                                {m.streak}
-                            </span>
-                        </div>
+                            {/* 名前 + ステータス */}
+                            <div className="flex flex-1 flex-col">
+                                <span
+                                    className={`text-sm font-semibold ${m.doneToday ? "text-white" : "text-zinc-500"}`}
+                                >
+                                    {m.name}
+                                </span>
+                                <span
+                                    className={`text-xs font-medium ${m.doneToday ? "text-emerald-400" : "text-red-400/80"
+                                        }`}
+                                >
+                                    {m.doneToday ? "✅ 今日完了！" : "⚠️ 未完了"}
+                                </span>
+                            </div>
 
-                        {/* ランキングバッジ（上位3位） */}
-                        {i < 3 && m.streak > 0 && (
-                            <span className="text-sm">
-                                {i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"}
-                            </span>
-                        )}
-                    </div>
-                ))}
+                            {/* 催促ボタン */}
+                            {showPokeBtn && (
+                                <button
+                                    type="button"
+                                    onClick={() => handlePoke(m.name)}
+                                    disabled={alreadyPoked || isPoking}
+                                    className={`shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition-all active:scale-95 ${alreadyPoked
+                                            ? "border border-zinc-700 bg-zinc-800/50 text-zinc-500"
+                                            : "bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-sm shadow-orange-500/25 hover:brightness-110"
+                                        } disabled:pointer-events-none`}
+                                >
+                                    {isPoking
+                                        ? "⏳"
+                                        : alreadyPoked
+                                            ? "送信済 ✅"
+                                            : "⚡ 催促"}
+                                </button>
+                            )}
+
+                            {/* ストリーク */}
+                            <div className="flex items-center gap-1">
+                                <span
+                                    className={`text-base transition-all ${m.streak > 0
+                                        ? "drop-shadow-[0_0_4px_rgba(249,115,22,0.5)]"
+                                        : "grayscale opacity-40"
+                                        }`}
+                                >
+                                    🔥
+                                </span>
+                                <span
+                                    className={`text-lg font-black tabular-nums ${m.streak > 0
+                                        ? "bg-gradient-to-r from-orange-400 to-amber-400 bg-clip-text text-transparent"
+                                        : "text-zinc-600"
+                                        }`}
+                                >
+                                    {m.streak}
+                                </span>
+                            </div>
+
+                            {/* ランキングバッジ（上位3位） */}
+                            {i < 3 && m.streak > 0 && (
+                                <span className="text-sm">
+                                    {i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"}
+                                </span>
+                            )}
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );
 }
+

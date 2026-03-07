@@ -9,12 +9,17 @@ import PersonalStreak, {
   fireConfetti,
 } from "@/components/PersonalStreak";
 import FriendsStreakBoard from "@/components/FriendsStreakBoard";
+import ProfileModal from "@/components/ProfileModal";
+import WorkoutComments from "@/components/WorkoutComments";
+import SquadStreak from "@/components/SquadStreak";
+import NotificationBell from "@/components/NotificationBell";
 
 interface Workout {
   id: string;
   image_url: string;
   user_name: string | null;
   created_at: string;
+  caption?: string | null;
 }
 
 export default function Home() {
@@ -27,10 +32,14 @@ export default function Home() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  const [caption, setCaption] = useState("");
+
   // ── ストリーク & セレブレーション ──
   const [streak, setStreak] = useState(0);
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationStreak, setCelebrationStreak] = useState(0);
+  const [showProfile, setShowProfile] = useState(false);
+  const [activeTab, setActiveTab] = useState<'home' | 'squad'>('home');
 
   // ── 未ログイン → /login へリダイレクト ──
   useEffect(() => {
@@ -103,6 +112,7 @@ export default function Home() {
         image_url: urlData.publicUrl,
         user_name: displayName,
         created_at: new Date().toISOString(),
+        caption: caption.trim() || null,
       });
 
       if (insertError) throw new Error(`DB保存失敗: ${insertError.message}`);
@@ -135,6 +145,7 @@ export default function Home() {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     setSelectedFile(null);
+    setCaption("");
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -195,14 +206,18 @@ export default function Home() {
     <div className="gradient-bg flex min-h-dvh flex-col items-center px-6 pb-20 pt-16">
       {/* ── ヘッダーバー ── */}
       <div className="fixed left-0 right-0 top-0 z-50 flex items-center justify-between border-b border-zinc-800/60 bg-zinc-950/80 px-4 py-2.5 backdrop-blur-md">
-        <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setShowProfile(true)}
+          className="flex items-center gap-2 rounded-lg px-1 py-0.5 transition-all hover:bg-zinc-800/60 active:scale-95"
+        >
           <div
-            className={`flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br ${getAvatarColor(displayName)} text-xs font-bold text-white`}
+            className={`flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br ${getAvatarColor(displayName)} text-xs font-bold text-white ring-2 ring-transparent transition-all hover:ring-indigo-500/50`}
           >
             {getInitial(displayName)}
           </div>
           <span className="text-sm font-medium text-zinc-300">{displayName}</span>
-        </div>
+        </button>
 
         {/* ストリーク in ヘッダー */}
         <div className="flex items-center gap-1.5">
@@ -214,13 +229,15 @@ export default function Home() {
           </span>
           <span
             className={`text-lg font-bold tabular-nums ${streak > 0
-                ? "bg-gradient-to-r from-orange-400 to-amber-400 bg-clip-text text-transparent"
-                : "text-zinc-600"
+              ? "bg-gradient-to-r from-orange-400 to-amber-400 bg-clip-text text-transparent"
+              : "text-zinc-600"
               }`}
           >
             {streak}
           </span>
         </div>
+
+        <NotificationBell currentUserDisplayName={displayName} />
 
         <button
           type="button"
@@ -231,178 +248,230 @@ export default function Home() {
         </button>
       </div>
 
-      {/* ── PersonalStreak コンポーネント ── */}
-      <div className="mt-2">
-        <PersonalStreak
-          workouts={workouts}
-          displayName={displayName}
-          streak={streak}
-        />
+      {/* ── タブ切り替え UI ── */}
+      <div className="mt-2 w-full max-w-sm">
+        <div className="flex rounded-xl bg-zinc-900/80 p-1 border border-zinc-800">
+          <button
+            type="button"
+            onClick={() => setActiveTab('home')}
+            className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2.5 text-sm font-semibold transition-all duration-300 ${activeTab === 'home'
+              ? 'bg-zinc-700/80 text-white shadow-sm'
+              : 'text-zinc-500 hover:text-zinc-300'
+              }`}
+          >
+            🏠 ホーム
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('squad')}
+            className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2.5 text-sm font-semibold transition-all duration-300 ${activeTab === 'squad'
+              ? 'bg-zinc-700/80 text-white shadow-sm'
+              : 'text-zinc-500 hover:text-zinc-300'
+              }`}
+          >
+            👥 スクワッド
+          </button>
+        </div>
       </div>
 
-      {/* ── FriendsStreakBoard コンポーネント ── */}
-      <div className="mt-4">
-        <FriendsStreakBoard workouts={workouts} />
-      </div>
-
-      {/* decorative rings */}
-      {!previewUrl && (
-        <div className="pointer-events-none absolute top-0 left-0 right-0 flex h-[600px] items-center justify-center overflow-hidden">
-          <div className="pulse-ring h-72 w-72 rounded-full border border-indigo-500/20" />
-        </div>
-      )}
-
-      <main className="relative z-10 mt-6 flex w-full max-w-sm flex-col items-center gap-8 text-center">
-        {/* icon */}
-        <div className="float-animation flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-4xl shadow-lg shadow-indigo-500/30">
-          💪
-        </div>
-
-        {/* heading */}
-        <div className="flex flex-col gap-3">
-          <h1 className="text-3xl font-bold leading-tight tracking-tight text-white">
-            連帯責任筋トレアプリ
-            <br />
-            <span className="bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-              MVP
-            </span>
-          </h1>
-          <p className="text-base text-zinc-400">
-            仲間と一緒に、毎日の筋トレを続けよう
-          </p>
-        </div>
-
-        {/* hidden file input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={handleFileChange}
-          className="hidden"
-          aria-label="写真を撮影または選択"
-        />
-
-        {/* CTA button */}
-        <button
-          type="button"
-          onClick={handleButtonClick}
-          disabled={isSubmitting}
-          className="btn-glow relative w-full rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-600 px-8 py-4 text-lg font-semibold text-white shadow-xl shadow-indigo-500/25 transition-all duration-300 hover:shadow-indigo-500/40 hover:brightness-110 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50"
-        >
-          {previewUrl ? "📸 別の写真を撮り直す" : "📸 今日の筋トレを証明する"}
-        </button>
-
-        {/* preview area */}
-        {previewUrl && (
-          <div className="preview-appear flex w-full flex-col gap-4">
-            <div className="relative overflow-hidden rounded-2xl border-2 border-indigo-500/30 shadow-lg shadow-indigo-500/10">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={previewUrl}
-                alt="撮影した筋トレの写真"
-                className="h-auto w-full object-cover"
-              />
-              <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-sm">
-                <span className="inline-block h-2 w-2 rounded-full bg-green-400 shadow-sm shadow-green-400/50" />
-                プレビュー
-              </div>
-            </div>
-            <div className="flex w-full flex-col gap-3">
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={isSubmitting}
-                className="btn-glow w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 px-8 py-4 text-lg font-semibold text-white shadow-xl shadow-emerald-500/25 transition-all duration-300 hover:shadow-emerald-500/40 hover:brightness-110 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-70"
-              >
-                {isSubmitting ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                    送信中...
-                  </span>
-                ) : (
-                  "✅ この写真で記録する"
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={resetState}
-                disabled={isSubmitting}
-                className="w-full rounded-2xl border border-zinc-700 px-8 py-3 text-sm font-medium text-zinc-400 transition-all duration-300 hover:border-zinc-500 hover:text-zinc-300 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50"
-              >
-                やり直す
-              </button>
-            </div>
-          </div>
-        )}
-
-        {!previewUrl && (
-          <p className="text-sm text-zinc-500">ボタンを押してカメラで筋トレを記録</p>
-        )}
-
-        {/* ────────── タイムライン ────────── */}
-        <div className="mt-4 flex w-full flex-col gap-4">
-          <div className="flex items-center gap-3">
-            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-zinc-700 to-transparent" />
-            <h2 className="text-sm font-semibold tracking-wider text-zinc-400 uppercase">
-              🔥 みんなの記録
-            </h2>
-            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-zinc-700 to-transparent" />
+      {/* ══════ ホームタブ ══════ */}
+      {activeTab === 'home' && (
+        <>
+          {/* ── PersonalStreak コンポーネント ── */}
+          <div className="mt-4">
+            <PersonalStreak
+              workouts={workouts}
+              displayName={displayName}
+              streak={streak}
+            />
           </div>
 
-          {isLoading ? (
-            <div className="flex flex-col items-center gap-3 py-8">
-              <span className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-indigo-500/30 border-t-indigo-500" />
-              <p className="text-sm text-zinc-500">読み込み中...</p>
-            </div>
-          ) : workouts.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-zinc-700 px-6 py-10">
-              <span className="text-4xl">🏋️</span>
-              <p className="text-base font-medium text-zinc-300">まだ今日の記録はありません</p>
-              <p className="text-sm text-zinc-500">一番乗りを目指そう！</p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-4">
-              {workouts.map((w, i) => (
-                <div
-                  key={w.id}
-                  className="timeline-card group overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/60 backdrop-blur-sm transition-all duration-300 hover:border-indigo-500/40 hover:shadow-lg hover:shadow-indigo-500/5"
-                  style={{ animationDelay: `${i * 80}ms` }}
-                >
-                  <div className="flex items-center gap-3 px-4 py-3">
-                    <div
-                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${getAvatarColor(w.user_name)} text-sm font-bold text-white shadow-sm`}
-                    >
-                      {getInitial(w.user_name)}
-                    </div>
-                    <div className="flex flex-1 flex-col items-start">
-                      <span className="text-sm font-semibold text-white">
-                        {w.user_name || "匿名"}
-                      </span>
-                      <span className="text-xs text-zinc-500">{formatTime(w.created_at)}</span>
-                    </div>
-                    <span className="text-xs font-medium text-emerald-400">✅ 完了</span>
-                  </div>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={w.image_url}
-                    alt={`${w.user_name ?? "匿名"}の筋トレ証明写真`}
-                    className="h-56 w-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
-                    loading="lazy"
-                  />
-                  <div className="flex items-center gap-2 px-4 py-2.5">
-                    <span className="text-base">💪</span>
-                    <span className="text-sm text-zinc-400">
-                      <span className="font-medium text-zinc-200">{w.user_name || "匿名"}</span>
-                      {" さんが筋トレを完了！"}
-                    </span>
-                  </div>
-                </div>
-              ))}
+          {/* decorative rings */}
+          {!previewUrl && (
+            <div className="pointer-events-none absolute top-0 left-0 right-0 flex h-[600px] items-center justify-center overflow-hidden">
+              <div className="pulse-ring h-72 w-72 rounded-full border border-indigo-500/20" />
             </div>
           )}
+
+          <main className="relative z-10 mt-6 flex w-full max-w-sm flex-col items-center gap-8 text-center">
+            {/* icon */}
+            <div className="float-animation flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-4xl shadow-lg shadow-indigo-500/30">
+              💪
+            </div>
+
+            {/* heading */}
+            <div className="flex flex-col gap-3">
+              <h1 className="text-3xl font-bold leading-tight tracking-tight text-white">
+                連帯責任筋トレアプリ
+                <br />
+                <span className="bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+                  MVP
+                </span>
+              </h1>
+              <p className="text-base text-zinc-400">
+                仲間と一緒に、毎日の筋トレを続けよう
+              </p>
+            </div>
+
+            {/* hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleFileChange}
+              className="hidden"
+              aria-label="写真を撮影または選択"
+            />
+
+            {/* CTA button */}
+            <button
+              type="button"
+              onClick={handleButtonClick}
+              disabled={isSubmitting}
+              className="btn-glow relative w-full rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-600 px-8 py-4 text-lg font-semibold text-white shadow-xl shadow-indigo-500/25 transition-all duration-300 hover:shadow-indigo-500/40 hover:brightness-110 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50"
+            >
+              {previewUrl ? "📸 別の写真を撮り直す" : "📸 今日の筋トレを証明する"}
+            </button>
+
+            {/* preview area */}
+            {previewUrl && (
+              <div className="preview-appear flex w-full flex-col gap-4">
+                <div className="relative overflow-hidden rounded-2xl border-2 border-indigo-500/30 shadow-lg shadow-indigo-500/10">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={previewUrl}
+                    alt="撮影した筋トレの写真"
+                    className="h-auto w-full object-cover"
+                  />
+                  <div className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-sm">
+                    <span className="inline-block h-2 w-2 rounded-full bg-green-400 shadow-sm shadow-green-400/50" />
+                    プレビュー
+                  </div>
+                </div>
+                {/* キャプション入力 */}
+                <textarea
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value)}
+                  placeholder="今日の筋トレの感想は？（任意）"
+                  maxLength={200}
+                  rows={2}
+                  className="w-full resize-none rounded-xl border border-zinc-700 bg-zinc-800/80 px-4 py-3 text-sm text-white placeholder-zinc-500 outline-none transition-all focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30"
+                />
+                <div className="flex w-full flex-col gap-3">
+                  <button
+                    type="button"
+                    onClick={handleSubmit}
+                    disabled={isSubmitting}
+                    className="btn-glow w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 px-8 py-4 text-lg font-semibold text-white shadow-xl shadow-emerald-500/25 transition-all duration-300 hover:shadow-emerald-500/40 hover:brightness-110 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-70"
+                  >
+                    {isSubmitting ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                        送信中...
+                      </span>
+                    ) : (
+                      "✅ この写真で記録する"
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetState}
+                    disabled={isSubmitting}
+                    className="w-full rounded-2xl border border-zinc-700 px-8 py-3 text-sm font-medium text-zinc-400 transition-all duration-300 hover:border-zinc-500 hover:text-zinc-300 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    やり直す
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {!previewUrl && (
+              <p className="text-sm text-zinc-500">ボタンを押してカメラで筋トレを記録</p>
+            )}
+
+            {/* ────────── タイムライン ────────── */}
+            <div className="mt-4 flex w-full flex-col gap-4">
+              <div className="flex items-center gap-3">
+                <div className="h-px flex-1 bg-gradient-to-r from-transparent via-zinc-700 to-transparent" />
+                <h2 className="text-sm font-semibold tracking-wider text-zinc-400 uppercase">
+                  🔥 みんなの記録
+                </h2>
+                <div className="h-px flex-1 bg-gradient-to-r from-transparent via-zinc-700 to-transparent" />
+              </div>
+
+              {isLoading ? (
+                <div className="flex flex-col items-center gap-3 py-8">
+                  <span className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-indigo-500/30 border-t-indigo-500" />
+                  <p className="text-sm text-zinc-500">読み込み中...</p>
+                </div>
+              ) : workouts.length === 0 ? (
+                <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-zinc-700 px-6 py-10">
+                  <span className="text-4xl">🏋️</span>
+                  <p className="text-base font-medium text-zinc-300">まだ今日の記録はありません</p>
+                  <p className="text-sm text-zinc-500">一番乗りを目指そう！</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-4">
+                  {workouts.map((w, i) => (
+                    <div
+                      key={w.id}
+                      className="timeline-card group overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/60 backdrop-blur-sm transition-all duration-300 hover:border-indigo-500/40 hover:shadow-lg hover:shadow-indigo-500/5"
+                      style={{ animationDelay: `${i * 80}ms` }}
+                    >
+                      <div className="flex items-center gap-3 px-4 py-3">
+                        <div
+                          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${getAvatarColor(w.user_name)} text-sm font-bold text-white shadow-sm`}
+                        >
+                          {getInitial(w.user_name)}
+                        </div>
+                        <div className="flex flex-1 flex-col items-start">
+                          <span className="text-sm font-semibold text-white">
+                            {w.user_name || "匿名"}
+                          </span>
+                          <span className="text-xs text-zinc-500">{formatTime(w.created_at)}</span>
+                        </div>
+                        <span className="text-xs font-medium text-emerald-400">✅ 完了</span>
+                      </div>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={w.image_url}
+                        alt={`${w.user_name ?? "匿名"}の筋トレ証明写真`}
+                        className="h-56 w-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+                        loading="lazy"
+                      />
+                      <div className="flex items-center gap-2 px-4 py-2.5">
+                        <span className="text-base">💪</span>
+                        <span className="text-sm text-zinc-400">
+                          <span className="font-medium text-zinc-200">{w.user_name || "匿名"}</span>
+                          {" さんが筋トレを完了！"}
+                        </span>
+                      </div>
+                      {/* キャプション表示 */}
+                      {w.caption && (
+                        <div className="px-4 pb-2">
+                          <p className="rounded-lg bg-zinc-800/50 px-3 py-2 text-sm leading-relaxed text-zinc-300">
+                            {w.caption}
+                          </p>
+                        </div>
+                      )}
+                      {/* コメントセクション */}
+                      <WorkoutComments workoutId={w.id} currentUser={displayName} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </main>
+        </>)}
+
+      {/* ══════ スクワッドタブ ══════ */}
+      {activeTab === 'squad' && (
+        <div className="mt-4 flex w-full flex-col items-center gap-6">
+          <SquadStreak workouts={workouts} />
+          <FriendsStreakBoard workouts={workouts} currentUser={displayName} />
         </div>
-      </main>
+      )}
 
       <footer className="mt-12 text-xs text-zinc-600">Streak Squad &copy; 2026</footer>
 
@@ -452,6 +521,12 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* ── プロフィールモーダル ── */}
+      <ProfileModal
+        isOpen={showProfile}
+        onClose={() => setShowProfile(false)}
+      />
     </div>
   );
 }
