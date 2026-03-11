@@ -22,7 +22,9 @@ export function useFCMToken(userId: string | undefined) {
 
     // iOS Safari（PWA でない場合）
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const isStandalone = window.matchMedia("(display-mode: standalone)").matches;
+    const isStandalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true;
     if (isIOS && !isStandalone) {
       setStatus("ios_browser");
       return;
