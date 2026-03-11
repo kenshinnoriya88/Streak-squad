@@ -52,8 +52,9 @@ export async function POST(req: NextRequest) {
     console.log("[poke] FCM 送信完了");
     return NextResponse.json({ ok: true, sent: true });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error("[poke]", message);
-    return NextResponse.json({ error: message, detail: String(err) }, { status: 500 });
+    const message = err instanceof Error ? err.message : JSON.stringify(err);
+    const code = (err as Record<string, unknown>)?.code;
+    console.error("[poke] error:", message, "code:", code);
+    return NextResponse.json({ error: message, code }, { status: 500 });
   }
 }
