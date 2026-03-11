@@ -22,9 +22,15 @@ export function useFCMToken(userId: string | undefined) {
 
     // iOS Safari（PWA でない場合）
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isChrome = /CriOS/.test(navigator.userAgent);
     const isStandalone =
       window.matchMedia("(display-mode: standalone)").matches ||
       (navigator as Navigator & { standalone?: boolean }).standalone === true;
+    // iOS Chrome は PWA でも Push 非対応
+    if (isIOS && isChrome) {
+      setStatus("unsupported");
+      return;
+    }
     if (isIOS && !isStandalone) {
       setStatus("ios_browser");
       return;
