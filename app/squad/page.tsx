@@ -320,8 +320,8 @@ export default function SquadPage() {
               </span>
             )}
             {fcmStatus === "unsupported" && (
-              <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-bold text-zinc-500">
-                🚫 通知非対応
+              <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-bold text-zinc-500" title="iOS 16.4以上のSafari PWAが必要です">
+                🚫 iOS16.4+Safari必須
               </span>
             )}
             <Link
