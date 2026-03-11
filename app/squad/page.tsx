@@ -249,6 +249,7 @@ export default function SquadPage() {
       const body = await res.json();
       console.log("[Poke]", name, "→", body);
       if (!res.ok) {
+        alert(`Pokeエラー: ${body.error || body.detail || "不明"}`);
         setPokeResults((prev) => new Map(prev).set(userId, "error"));
       } else if (body.sent === false) {
         setPokeResults((prev) => new Map(prev).set(userId, "no_sub"));
