@@ -25,12 +25,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
 
+    // ユーザーのプロフィールを確実に同期する
+    const upsertProfile = useCallback(async (u: User) => {
+        const name =
+            u.user_metadata?.display_name ??
+            u.email?.split("@")[0] ??
+            "ユーザー";
+        await supabase
+            .from("profiles")
+            .upsert({ id: u.id, display_name: name }, { onConflict: "id" });
+    }, []);
+
     useEffect(() => {
         // 初回セッション取得
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session);
             setUser(session?.user ?? null);
             setLoading(false);
+            if (session?.user) upsertProfile(session.user);
         });
 
         // セッション変更をリアルタイム監視
@@ -40,6 +52,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setSession(session);
             setUser(session?.user ?? null);
             setLoading(false);
+            if (session?.user) upsertProfile(session.user);
         });
 
         return () => subscription.unsubscribe();
