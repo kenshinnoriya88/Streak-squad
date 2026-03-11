@@ -9,6 +9,8 @@ import { calcStreakForUser, fireConfetti } from "@/components/PersonalStreak";
 import WorkoutComments from "@/components/WorkoutComments";
 import { useFCMToken } from "@/hooks/useFCMToken";
 import type { FCMStatus } from "@/hooks/useFCMToken";
+import { onMessage } from "firebase/messaging";
+import { getFirebaseMessaging } from "@/lib/firebase";
 import NotificationPermissionModal from "@/components/NotificationPermissionModal";
 
 interface Workout {
@@ -182,6 +184,26 @@ export default function SquadPage() {
   useEffect(() => {
     if (user) fetchWorkouts();
   }, [user, fetchWorkouts]);
+
+  // フォアグラウンドでのFCM通知受信
+  useEffect(() => {
+    if (fcmStatus !== "subscribed") return;
+    const messaging = getFirebaseMessaging();
+    if (!messaging) return;
+    const unsubscribe = onMessage(messaging, (payload) => {
+      console.log("[FCM] フォアグラウンド通知:", payload);
+      const title = payload.notification?.title ?? "Streak Squad";
+      const body = payload.notification?.body ?? "";
+      if (Notification.permission === "granted") {
+        new Notification(title, {
+          body,
+          icon: "/icon-192.png",
+          tag: "poke",
+        });
+      }
+    });
+    return () => unsubscribe();
+  }, [fcmStatus]);
 
   const handleFileChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
