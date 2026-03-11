@@ -1,21 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import Stripe from "stripe";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: "2026-02-25.clover",
+});
+
 // ── 認証チェック ──────────────────────────────────────────────
 function isAuthorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
-
-  // Vercel Cron は Authorization: Bearer <secret> を送る
   const authHeader = req.headers.get("authorization");
   if (authHeader === `Bearer ${secret}`) return true;
-
-  // ローカルテスト用: ?secret=xxx も受け付ける
   const urlSecret = new URL(req.url).searchParams.get("secret");
   return urlSecret === secret;
 }
@@ -23,19 +24,63 @@ function isAuthorized(req: NextRequest): boolean {
 // ── JST での「昨日」の UTC 範囲を返す ─────────────────────────
 function yesterdayJSTinUTC(): { start: Date; end: Date } {
   const nowUTC = new Date();
-  // JST = UTC + 9h
   const nowJST = new Date(nowUTC.getTime() + 9 * 60 * 60 * 1000);
-  // 昨日の JST 0:00
   const yStart = new Date(nowJST);
   yStart.setDate(yStart.getDate() - 1);
   yStart.setHours(0, 0, 0, 0);
-  // 昨日の JST 23:59:59.999
   const yEnd = new Date(yStart.getTime() + 24 * 60 * 60 * 1000 - 1);
-  // UTC に戻す
   return {
     start: new Date(yStart.getTime() - 9 * 60 * 60 * 1000),
     end: new Date(yEnd.getTime() - 9 * 60 * 60 * 1000),
   };
+}
+
+// ── Stripe Capture（デポジット没収） ──────────────────────────
+async function captureDeposit(
+  paymentIntentId: string,
+  amount: number,
+  userId: string,
+  log: string[],
+  userName: string
+): Promise<boolean> {
+  if (!paymentIntentId) {
+    log.push(`    [${userName}] ⚠️ stripe_payment_intent_id なし → Captureスキップ`);
+    return false;
+  }
+
+  try {
+    // PaymentIntentの状態を確認
+    const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+    if (pi.status === "requires_capture") {
+      // 与信確保済み → Capture（引き落とし確定）
+      const captured = await stripe.paymentIntents.capture(paymentIntentId);
+      log.push(`    [${userName}] 💸 Capture成功: ¥${amount} (${captured.id})`);
+
+      // transactions テーブルに記録
+      await supabaseAdmin.from("transactions").insert({
+        user_id: userId,
+        amount,
+        transaction_type: "penalty",
+        stripe_charge_id: captured.latest_charge as string,
+      });
+
+      return true;
+    } else if (pi.status === "succeeded") {
+      log.push(`    [${userName}] ⚠️ 既にCapture済み (${paymentIntentId})`);
+      return true;
+    } else if (pi.status === "canceled") {
+      log.push(`    [${userName}] ⚠️ PaymentIntentがキャンセル済み (${paymentIntentId})`);
+      return false;
+    } else {
+      log.push(`    [${userName}] ⚠️ 予期しないステータス: ${pi.status} (${paymentIntentId})`);
+      return false;
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : JSON.stringify(err);
+    log.push(`    [${userName}] ❌ Captureエラー: ${message}`);
+    return false;
+  }
 }
 
 // ── メインロジック ────────────────────────────────────────────
@@ -89,7 +134,7 @@ export async function GET(req: NextRequest) {
       .select("id, display_name")
       .in("id", activeUserIds);
 
-    const nameMap = new Map<string, string>(); // userId → display_name
+    const nameMap = new Map<string, string>();
     (profiles ?? []).forEach((p) => {
       if (p.display_name) nameMap.set(p.id as string, p.display_name as string);
     });
@@ -139,7 +184,7 @@ export async function GET(req: NextRequest) {
 
       log.push(`  → ⚠️ 未提出者あり。streak ${squad.current_streak} → 0`);
 
-      // ── 7c. 未提出者のチャレンジを failed に ──────────────────
+      // ── 7c. 未提出者のチャレンジを failed に & デポジット没収 ──
       for (const uid of absentUserIds) {
         const name = nameMap.get(uid) ?? uid.slice(0, 8);
 
@@ -152,13 +197,25 @@ export async function GET(req: NextRequest) {
 
         if (updateErr) {
           log.push(`    [${name}] challenge 更新エラー: ${updateErr.message}`);
-        } else {
-          log.push(
-            `    [${name}] ❌ challenge failed: ${(updated ?? [])
-              .map((c) => `id=${c.id} ¥${c.deposit_amount}`)
-              .join(", ")}`
+          continue;
+        }
+
+        // 各チャレンジのデポジットをCapture（没収）
+        for (const challenge of updated ?? []) {
+          await captureDeposit(
+            challenge.stripe_payment_intent_id,
+            challenge.deposit_amount,
+            uid,
+            log,
+            name
           );
         }
+
+        log.push(
+          `    [${name}] ❌ challenge failed: ${(updated ?? [])
+            .map((c) => `id=${c.id} ¥${c.deposit_amount}`)
+            .join(", ")}`
+        );
       }
 
       results.push({
