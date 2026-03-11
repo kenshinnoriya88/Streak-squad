@@ -13,16 +13,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "userId と token は必須" }, { status: 400 });
     }
 
-    const { error } = await supabaseAdmin
+    // まず update を試行、行がなければ upsert
+    const { error: updateError } = await supabaseAdmin
       .from("profiles")
-      .upsert({ id: userId, fcm_token: token }, { onConflict: "id" });
+      .update({ fcm_token: token })
+      .eq("id", userId);
 
-    if (error) throw error;
+    if (updateError) {
+      console.warn("[fcm/save-token] update失敗、upsert試行:", JSON.stringify(updateError));
+      const { error: upsertError } = await supabaseAdmin
+        .from("profiles")
+        .upsert({ id: userId, fcm_token: token }, { onConflict: "id" });
+      if (upsertError) {
+        console.error("[fcm/save-token] upsert失敗:", JSON.stringify(upsertError));
+        throw new Error(JSON.stringify(upsertError));
+      }
+    }
 
     console.log("[fcm/save-token] 保存成功 userId:", userId);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("[fcm/save-token]", err);
-    return NextResponse.json({ error: String(err) }, { status: 500 });
+    const message = err instanceof Error ? err.message : JSON.stringify(err);
+    console.error("[fcm/save-token] エラー:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
