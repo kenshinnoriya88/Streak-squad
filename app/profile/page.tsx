@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthProvider";
+import { useFCMToken, registerToken } from "@/hooks/useFCMToken";
+import type { FCMStatus } from "@/hooks/useFCMToken";
 
 interface Challenge {
   id: string;
@@ -34,6 +36,10 @@ export default function ProfilePage() {
   const [loadingChallenges, setLoadingChallenges] = useState(true);
   const [big3, setBig3] = useState({ bench: "", squat: "", deadlift: "" });
   const [editingBig3, setEditingBig3] = useState(false);
+  const fcmStatusFromHook = useFCMToken(user?.id);
+  const [fcmStatus, setFcmStatus] = useState<FCMStatus>("idle");
+  const [isTogglingNotif, setIsTogglingNotif] = useState(false);
+  useEffect(() => { setFcmStatus(fcmStatusFromHook); }, [fcmStatusFromHook]);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -158,6 +164,86 @@ export default function ProfilePage() {
                 )}
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* 通知設定 */}
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5 flex flex-col gap-4">
+          <h2 className="text-sm font-black text-white">🔔 通知設定</h2>
+
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm text-zinc-300">Poke通知</span>
+              <span className="text-[11px] text-zinc-600">
+                {fcmStatus === "subscribed" && "通知を受け取れる状態です"}
+                {fcmStatus === "denied" && "ブラウザで通知がブロックされています"}
+                {fcmStatus === "need_permission" && "通知を許可してください"}
+                {fcmStatus === "ios_browser" && "Safariからホーム画面に追加が必要です"}
+                {fcmStatus === "unsupported" && "このブラウザでは通知を利用できません"}
+                {fcmStatus === "error" && "通知の登録でエラーが発生しました"}
+                {(fcmStatus === "idle" || fcmStatus === "subscribing") && "確認中..."}
+              </span>
+            </div>
+
+            {fcmStatus === "subscribed" ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!user) return;
+                  setIsTogglingNotif(true);
+                  try {
+                    await supabase
+                      .from("profiles")
+                      .update({ fcm_token: null })
+                      .eq("id", user.id);
+                    setFcmStatus("need_permission");
+                  } finally {
+                    setIsTogglingNotif(false);
+                  }
+                }}
+                disabled={isTogglingNotif}
+                className="rounded-full bg-emerald-900/30 border border-emerald-700/40 px-4 py-2 text-xs font-bold text-emerald-400 transition-all hover:bg-red-900/30 hover:border-red-700/40 hover:text-red-400 disabled:opacity-50"
+              >
+                {isTogglingNotif ? "..." : "ON"}
+              </button>
+            ) : fcmStatus === "need_permission" || fcmStatus === "error" ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!user) return;
+                  setIsTogglingNotif(true);
+                  try {
+                    const permission = await Notification.requestPermission();
+                    if (permission === "granted") {
+                      await registerToken(user.id, setFcmStatus);
+                    } else {
+                      setFcmStatus("denied");
+                    }
+                  } finally {
+                    setIsTogglingNotif(false);
+                  }
+                }}
+                disabled={isTogglingNotif}
+                className="rounded-full bg-zinc-800 border border-zinc-700 px-4 py-2 text-xs font-bold text-zinc-400 transition-all hover:border-red-700/40 hover:text-red-400 disabled:opacity-50"
+              >
+                {isTogglingNotif ? "登録中..." : "OFF → ONにする"}
+              </button>
+            ) : fcmStatus === "denied" ? (
+              <div className="flex flex-col items-end gap-1">
+                <span className="rounded-full bg-zinc-800 border border-zinc-700 px-4 py-2 text-xs font-bold text-zinc-600">
+                  ブロック中
+                </span>
+                <span className="text-[10px] text-zinc-600">ブラウザ設定から許可してください</span>
+              </div>
+            ) : fcmStatus === "ios_browser" ? (
+              <span className="rounded-full bg-amber-900/20 border border-amber-700/40 px-4 py-2 text-xs font-bold text-amber-400">
+                Safari PWA必須
+              </span>
+            ) : (
+              <span className="rounded-full bg-zinc-800 border border-zinc-700 px-4 py-2 text-xs font-bold text-zinc-600">
+                利用不可
+              </span>
+            )}
           </div>
         </div>
 
