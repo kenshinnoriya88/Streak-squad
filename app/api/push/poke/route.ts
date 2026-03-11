@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import admin from "@/lib/firebase-admin";
+import { getAdmin } from "@/lib/firebase-admin";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     }
 
     // FCM で送信
-    await admin.messaging().send({
+    await getAdmin().messaging().send({
       token: fcmToken,
       notification: {
         title: "👊 Poke！さぼってんじゃない！",
