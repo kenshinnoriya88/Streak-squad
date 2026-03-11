@@ -12,6 +12,7 @@ interface Props {
 
 export default function NotificationPermissionModal({ userId, status, onStatusChange }: Props) {
   const [dismissed, setDismissed] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
 
   // 表示しないケース
   if (dismissed) return null;
@@ -25,19 +26,19 @@ export default function NotificationPermissionModal({ userId, status, onStatusCh
           <div className="mb-4 flex items-center gap-3">
             <span className="text-3xl">📲</span>
             <div>
-              <h2 className="text-base font-black text-white">ホーム画面に追加してください</h2>
-              <p className="text-xs text-zinc-500">iOS で通知を受け取るには PWA が必要です</p>
+              <h2 className="text-base font-black text-white">Safariから追加してください</h2>
+              <p className="text-xs text-zinc-500">iOS で通知を受け取るにはSafariからPWA追加が必要です</p>
             </div>
           </div>
 
           <ol className="mb-5 flex flex-col gap-2 text-sm text-zinc-300">
             <li className="flex items-start gap-2">
               <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-[11px] font-bold text-amber-400">1</span>
-              Safari 下部の <span className="mx-1 rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-xs">共有</span> ボタンをタップ
+              <span><span className="font-semibold text-white">Safari</span> でこのページを開く</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-[11px] font-bold text-amber-400">2</span>
-              「<span className="font-semibold text-white">ホーム画面に追加</span>」を選択
+              <span>下部の <span className="rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-xs">共有</span> → 「<span className="font-semibold text-white">ホーム画面に追加</span>」</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-[11px] font-bold text-amber-400">3</span>
@@ -45,12 +46,16 @@ export default function NotificationPermissionModal({ userId, status, onStatusCh
             </li>
           </ol>
 
+          <p className="mb-4 rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 py-2 text-[11px] text-zinc-500">
+            ※ Chrome等のiOSブラウザではAppleの制限により通知が使えません。通知なしでもPokeの送信は可能です。
+          </p>
+
           <button
             type="button"
             onClick={() => setDismissed(true)}
             className="w-full rounded-xl border border-zinc-700 py-3 text-sm font-semibold text-zinc-400 transition-all hover:border-zinc-500 hover:text-zinc-200"
           >
-            あとで
+            閉じる
           </button>
         </div>
       </div>
@@ -77,24 +82,34 @@ export default function NotificationPermissionModal({ userId, status, onStatusCh
         <div className="flex flex-col gap-2">
           <button
             type="button"
+            disabled={isRegistering}
             onClick={async () => {
-              const permission = await Notification.requestPermission();
-              if (permission === "granted") {
-                await registerToken(userId, onStatusChange);
-              } else {
-                onStatusChange("denied");
+              setIsRegistering(true);
+              try {
+                const permission = await Notification.requestPermission();
+                console.log("[通知モーダル] permission:", permission);
+                if (permission === "granted") {
+                  await registerToken(userId, onStatusChange);
+                  setDismissed(true);
+                } else {
+                  onStatusChange("denied");
+                  setDismissed(true);
+                }
+              } catch (err) {
+                console.error("[通知モーダル] エラー:", err);
+                onStatusChange("error");
+              } finally {
+                setIsRegistering(false);
               }
-              setDismissed(true);
             }}
-            className="w-full rounded-xl bg-gradient-to-r from-red-600 to-rose-600 py-3.5 text-sm font-black text-white shadow-lg shadow-red-900/40 transition-all hover:brightness-110 active:scale-[0.97]"
+            className="w-full rounded-xl bg-gradient-to-r from-red-600 to-rose-600 py-3.5 text-sm font-black text-white shadow-lg shadow-red-900/40 transition-all hover:brightness-110 active:scale-[0.97] disabled:opacity-60"
           >
-            🔔 通知を許可する
+            {isRegistering ? "登録中..." : "🔔 通知を許可する"}
           </button>
           <button
             type="button"
             onClick={() => {
               setDismissed(true);
-              onStatusChange("denied");
             }}
             className="w-full py-2 text-xs text-zinc-600 hover:text-zinc-400"
           >

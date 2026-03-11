@@ -23,7 +23,10 @@ export async function POST(req: NextRequest) {
       .eq("id", toUserId)
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) {
+      console.error("[poke] DB エラー:", JSON.stringify(error));
+      throw error;
+    }
 
     const fcmToken = data?.fcm_token;
     if (!fcmToken) {
@@ -31,8 +34,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, sent: false, reason: "no_token" });
     }
 
+    console.log("[poke] FCM token:", fcmToken.slice(0, 20) + "...");
+
     // FCM で送信
-    await getAdmin().messaging().send({
+    const admin = getAdmin();
+    const messageId = await admin.messaging().send({
       token: fcmToken,
       notification: {
         title: "👊 Poke！さぼってんじゃない！",
@@ -49,12 +55,12 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    console.log("[poke] FCM 送信完了");
-    return NextResponse.json({ ok: true, sent: true });
+    console.log("[poke] FCM 送信完了 messageId:", messageId);
+    return NextResponse.json({ ok: true, sent: true, messageId });
   } catch (err) {
     const message = err instanceof Error ? err.message : JSON.stringify(err);
     const code = (err as Record<string, unknown>)?.code;
-    console.error("[poke] error:", message, "code:", code);
+    console.error("[poke] エラー:", message, "code:", code);
     return NextResponse.json({ error: message, code }, { status: 500 });
   }
 }
