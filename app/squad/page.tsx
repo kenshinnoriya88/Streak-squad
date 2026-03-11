@@ -82,6 +82,7 @@ export default function SquadPage() {
   // FCM 通知ステータス（モーダルからも更新できるよう state で管理）
   const fcmStatusFromHook = useFCMToken(user?.id);
   const [fcmStatus, setFcmStatus] = useState<FCMStatus>("idle");
+  const [showNotifModal, setShowNotifModal] = useState(false);
   useEffect(() => { setFcmStatus(fcmStatusFromHook); }, [fcmStatusFromHook]);
 
   const fetchWorkouts = useCallback(async () => {
@@ -309,20 +310,14 @@ export default function SquadPage() {
                 🔔 通知ON
               </span>
             )}
-            {fcmStatus === "denied" && (
-              <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-bold text-zinc-500">
-                🔕 通知OFF
-              </span>
-            )}
-            {fcmStatus === "ios_browser" && (
-              <span className="rounded-full border border-amber-700/40 bg-amber-900/20 px-2 py-0.5 text-[10px] font-bold text-amber-400">
-                📲 ホーム画面追加必須
-              </span>
-            )}
-            {fcmStatus === "unsupported" && (
-              <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-bold text-zinc-500" title="iOS 16.4以上のSafari PWAが必要です">
-                🚫 iOS16.4+Safari必須
-              </span>
+            {(fcmStatus === "denied" || fcmStatus === "need_permission" || fcmStatus === "ios_browser" || fcmStatus === "unsupported" || fcmStatus === "error") && (
+              <button
+                type="button"
+                onClick={() => setShowNotifModal(true)}
+                className="rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-bold text-zinc-400 hover:text-zinc-200 transition-all"
+              >
+                {fcmStatus === "ios_browser" ? "📲 通知設定" : fcmStatus === "unsupported" ? "🚫 通知設定" : "🔕 通知をONにする"}
+              </button>
             )}
             <Link
               href="/squad/setup"
@@ -712,8 +707,8 @@ export default function SquadPage() {
       {user && (
         <NotificationPermissionModal
           userId={user.id}
-          status={fcmStatus}
-          onStatusChange={setFcmStatus}
+          status={showNotifModal ? (fcmStatus === "subscribed" ? "subscribed" : fcmStatus === "ios_browser" ? "ios_browser" : "need_permission") : fcmStatus}
+          onStatusChange={(s) => { setFcmStatus(s); setShowNotifModal(false); }}
         />
       )}
 
