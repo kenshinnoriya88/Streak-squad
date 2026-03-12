@@ -68,6 +68,7 @@ export default function SquadPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [noSquad, setNoSquad] = useState(false);
   const [squadInfo, setSquadInfo] = useState<{ name: string; invite_code: string } | null>(null);
+  const [currentSquadId, setCurrentSquadId] = useState<string | null>(null);
   const [teamStreak, setTeamStreak] = useState(0);
   const [memberStatuses, setMemberStatuses] = useState<MemberStatus[]>([]);
   const [pokedNames, setPokedNames] = useState<Set<string>>(new Set());
@@ -116,6 +117,7 @@ export default function SquadPage() {
 
     setNoSquad(false);
     const squadIds = memberships.map((m) => m.squad_id);
+    setCurrentSquadId(squadIds[0]);
 
     // スクワッド情報（名前・招待コード）
     const { data: squadData } = await supabase
@@ -149,11 +151,11 @@ export default function SquadPage() {
     );
     const memberNames = [...memberNameMap.values()];
 
-    // Step 4: workoutsをメンバー表示名でフィルタリング
+    // Step 4: workoutsを現在のスクワッドIDでフィルタリング
     const { data, error } = await supabase
       .from("workouts")
       .select("*")
-      .in("user_name", memberNames.length > 0 ? memberNames : ["__NO_MATCH__"])
+      .eq("squad_id", squadIds[0])
       .order("created_at", { ascending: false });
 
     const wks: Workout[] = error ? [] : (data ?? []);
@@ -243,6 +245,7 @@ export default function SquadPage() {
         user_name: displayName,
         created_at: new Date().toISOString(),
         caption: caption.trim() || null,
+        squad_id: currentSquadId,
       });
       if (insertError) throw new Error(`DB保存失敗: ${insertError.message}`);
 

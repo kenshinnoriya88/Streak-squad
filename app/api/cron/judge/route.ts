@@ -139,12 +139,13 @@ export async function GET(req: NextRequest) {
       if (p.display_name) nameMap.set(p.id as string, p.display_name as string);
     });
 
-    // ── 5. 昨日の workouts を取得 ──────────────────────────────
+    // ── 5. 昨日の workouts を取得（squad_id でフィルタ）────────
     const displayNames = [...nameMap.values()];
     const { data: yesterdayWorkouts } = displayNames.length
       ? await supabaseAdmin
           .from("workouts")
           .select("user_name")
+          .eq("squad_id", squad.id)
           .in("user_name", displayNames)
           .gte("created_at", dayStart.toISOString())
           .lte("created_at", dayEnd.toISOString())
