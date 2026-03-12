@@ -16,47 +16,78 @@ export async function POST(req: NextRequest) {
 
     console.log("[poke] toUserId:", toUserId, "fromName:", fromName);
 
-    // FCM token を profiles から取得
-    const { data, error } = await supabaseAdmin
-      .from("profiles")
-      .select("fcm_token")
-      .eq("id", toUserId)
-      .maybeSingle();
+    // 全デバイスの FCM token を取得
+    const { data: tokens, error } = await supabaseAdmin
+      .from("fcm_tokens")
+      .select("id, token")
+      .eq("user_id", toUserId);
 
     if (error) {
       console.error("[poke] DB エラー:", JSON.stringify(error));
       throw error;
     }
 
-    const fcmToken = data?.fcm_token;
-    if (!fcmToken) {
+    if (!tokens || tokens.length === 0) {
       console.warn("[poke] FCM token なし → 通知スキップ");
       return NextResponse.json({ ok: true, sent: false, reason: "no_token" });
     }
 
-    console.log("[poke] FCM token:", fcmToken.slice(0, 20) + "...");
+    console.log("[poke] 送信先デバイス数:", tokens.length);
 
-    // FCM で送信
+    // 全デバイスに送信（失敗したトークンは削除）
     const admin = getAdmin();
-    const messageId = await admin.messaging().send({
-      token: fcmToken,
-      notification: {
-        title: "👊 Poke！さぼってんじゃない！",
-        body: `${fromName} があなたをPokeしました！記録を止めるな！`,
-      },
-      webpush: {
-        fcmOptions: { link: "/squad" },
-        notification: {
-          icon: "/icon-192.png",
-          badge: "/icon-192.png",
-          tag: "poke",
-          renotify: true,
-        },
-      },
-    });
+    const results: { token: string; success: boolean; messageId?: string }[] = [];
+    const staleTokenIds: string[] = [];
 
-    console.log("[poke] FCM 送信完了 messageId:", messageId);
-    return NextResponse.json({ ok: true, sent: true, messageId });
+    for (const { id, token } of tokens) {
+      try {
+        const messageId = await admin.messaging().send({
+          token,
+          notification: {
+            title: "👊 Poke！さぼってんじゃない！",
+            body: `${fromName} があなたをPokeしました！記録を止めるな！`,
+          },
+          webpush: {
+            fcmOptions: { link: "/squad" },
+            notification: {
+              icon: "/icon-192.png",
+              badge: "/icon-192.png",
+              tag: "poke",
+              renotify: true,
+            },
+          },
+        });
+        console.log("[poke] 送信成功 token:", token.slice(0, 20) + "... messageId:", messageId);
+        results.push({ token: token.slice(0, 20), success: true, messageId });
+      } catch (sendErr) {
+        const code = (sendErr as Record<string, unknown>)?.code;
+        console.warn("[poke] 送信失敗 token:", token.slice(0, 20) + "... code:", code);
+        results.push({ token: token.slice(0, 20), success: false });
+
+        // 無効なトークンは削除対象
+        if (
+          code === "messaging/registration-token-not-registered" ||
+          code === "messaging/invalid-registration-token"
+        ) {
+          staleTokenIds.push(id);
+        }
+      }
+    }
+
+    // 無効トークンを削除
+    if (staleTokenIds.length > 0) {
+      await supabaseAdmin.from("fcm_tokens").delete().in("id", staleTokenIds);
+      console.log("[poke] 無効トークン削除:", staleTokenIds.length, "件");
+    }
+
+    const sentCount = results.filter((r) => r.success).length;
+    return NextResponse.json({
+      ok: true,
+      sent: sentCount > 0,
+      sentCount,
+      totalDevices: tokens.length,
+      results,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : JSON.stringify(err);
     const code = (err as Record<string, unknown>)?.code;

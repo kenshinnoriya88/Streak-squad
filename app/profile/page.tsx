@@ -193,9 +193,9 @@ export default function ProfilePage() {
                   setIsTogglingNotif(true);
                   try {
                     await supabase
-                      .from("profiles")
-                      .update({ fcm_token: null })
-                      .eq("id", user.id);
+                      .from("fcm_tokens")
+                      .delete()
+                      .eq("user_id", user.id);
                     setFcmStatus("need_permission");
                   } finally {
                     setIsTogglingNotif(false);
