@@ -20,19 +20,15 @@ export function useFCMToken(userId: string | undefined) {
   useEffect(() => {
     if (!userId) return;
 
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const isStandalone =
-      window.matchMedia("(display-mode: standalone)").matches ||
-      (navigator as Navigator & { standalone?: boolean }).standalone === true;
-    if (isIOS && !isStandalone) {
-      console.log("[FCM] iOS ブラウザ（PWA未追加）を検出");
-      setStatus("ios_browser");
-      return;
-    }
-
     if (!("Notification" in window) || !("serviceWorker" in navigator)) {
-      console.log("[FCM] Notification API 未対応ブラウザ");
-      setStatus("unsupported");
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      if (isIOS) {
+        console.log("[FCM] iOS で Notification API 未対応（ホーム画面追加が必要）");
+        setStatus("ios_browser");
+      } else {
+        console.log("[FCM] Notification API 未対応ブラウザ");
+        setStatus("unsupported");
+      }
       return;
     }
 
