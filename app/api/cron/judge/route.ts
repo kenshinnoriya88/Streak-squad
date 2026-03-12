@@ -47,39 +47,113 @@ async function captureDeposit(
     log.push(`    [${userName}] ⚠️ stripe_payment_intent_id なし → Captureスキップ`);
     return false;
   }
-
   try {
-    // PaymentIntentの状態を確認
     const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
-
     if (pi.status === "requires_capture") {
-      // 与信確保済み → Capture（引き落とし確定）
       const captured = await stripe.paymentIntents.capture(paymentIntentId);
       log.push(`    [${userName}] 💸 Capture成功: ¥${amount} (${captured.id})`);
-
-      // transactions テーブルに記録
       await supabaseAdmin.from("transactions").insert({
         user_id: userId,
         amount,
         transaction_type: "penalty",
         stripe_charge_id: captured.latest_charge as string,
       });
-
       return true;
     } else if (pi.status === "succeeded") {
-      log.push(`    [${userName}] ⚠️ 既にCapture済み (${paymentIntentId})`);
+      log.push(`    [${userName}] ⚠️ 既にCapture済み`);
       return true;
     } else if (pi.status === "canceled") {
-      log.push(`    [${userName}] ⚠️ PaymentIntentがキャンセル済み (${paymentIntentId})`);
+      log.push(`    [${userName}] ⚠️ 既にCancel済み`);
       return false;
     } else {
-      log.push(`    [${userName}] ⚠️ 予期しないステータス: ${pi.status} (${paymentIntentId})`);
+      log.push(`    [${userName}] ⚠️ 予期しないステータス: ${pi.status}`);
       return false;
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : JSON.stringify(err);
     log.push(`    [${userName}] ❌ Captureエラー: ${message}`);
     return false;
+  }
+}
+
+// ── Stripe Cancel（デポジット返金/解放） ──────────────────────
+async function cancelDeposit(
+  paymentIntentId: string,
+  amount: number,
+  userId: string,
+  log: string[],
+  userName: string
+): Promise<boolean> {
+  if (!paymentIntentId) {
+    log.push(`    [${userName}] ⚠️ stripe_payment_intent_id なし → Cancelスキップ`);
+    return false;
+  }
+  try {
+    const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+    if (pi.status === "requires_capture") {
+      await stripe.paymentIntents.cancel(paymentIntentId);
+      log.push(`    [${userName}] 🔓 Cancel成功: ¥${amount} 解放`);
+      return true;
+    } else if (pi.status === "canceled") {
+      log.push(`    [${userName}] ⚠️ 既にCancel済み`);
+      return true;
+    } else if (pi.status === "succeeded") {
+      log.push(`    [${userName}] ⚠️ 既にCapture済み → Cancel不可`);
+      return false;
+    } else {
+      log.push(`    [${userName}] ⚠️ 予期しないステータス: ${pi.status}`);
+      return false;
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : JSON.stringify(err);
+    log.push(`    [${userName}] ❌ Cancelエラー: ${message}`);
+    return false;
+  }
+}
+
+// ── 30日完走チェック & 完了処理 ───────────────────────────────
+async function checkAndCompleteExpired(log: string[]) {
+  const now = new Date();
+  const CHALLENGE_DAYS = 30;
+
+  // created_at から30日以上経過した active チャレンジを取得
+  const cutoff = new Date(now.getTime() - CHALLENGE_DAYS * 86_400_000);
+
+  const { data: expiredChallenges } = await supabaseAdmin
+    .from("challenges")
+    .select("id, user_id, deposit_amount, stripe_payment_intent_id, created_at")
+    .eq("status", "active")
+    .lte("created_at", cutoff.toISOString());
+
+  if (!expiredChallenges?.length) {
+    log.push("[完走チェック] 期間満了チャレンジなし");
+    return;
+  }
+
+  for (const challenge of expiredChallenges) {
+    // ステータスを completed に更新
+    await supabaseAdmin
+      .from("challenges")
+      .update({ status: "completed" })
+      .eq("id", challenge.id);
+
+    // デポジット解放（Cancel）
+    const { data: profile } = await supabaseAdmin
+      .from("profiles")
+      .select("display_name")
+      .eq("id", challenge.user_id)
+      .maybeSingle();
+    const name = (profile?.display_name as string) ?? (challenge.user_id as string).slice(0, 8);
+
+    await cancelDeposit(
+      challenge.stripe_payment_intent_id,
+      challenge.deposit_amount,
+      challenge.user_id,
+      log,
+      name
+    );
+
+    log.push(`[完走チェック] 🎉 [${name}] 30日完走！チャレンジ completed、デポジット ¥${challenge.deposit_amount} 返金`);
   }
 }
 
@@ -92,6 +166,9 @@ export async function GET(req: NextRequest) {
   const { start: dayStart, end: dayEnd } = yesterdayJSTinUTC();
   const log: string[] = [];
   log.push(`judge 開始: 対象日 JST ${dayStart.toISOString()} 〜 ${dayEnd.toISOString()}`);
+
+  // ── 0. 30日完走チェック（期間満了 → completed + Cancel）─────
+  await checkAndCompleteExpired(log);
 
   // ── 1. 全スクワッドを取得 ────────────────────────────────────
   const { data: squads, error: squadsErr } = await supabaseAdmin
@@ -117,7 +194,7 @@ export async function GET(req: NextRequest) {
     // ── 3. アクティブなチャレンジを持つメンバーのみ対象 ─────────
     const { data: activeChallenges } = await supabaseAdmin
       .from("challenges")
-      .select("id, user_id")
+      .select("id, user_id, deposit_amount, stripe_payment_intent_id, freeze_active")
       .in("user_id", memberIds)
       .eq("status", "active");
 
@@ -128,7 +205,7 @@ export async function GET(req: NextRequest) {
 
     const activeUserIds = [...new Set(activeChallenges.map((c) => c.user_id as string))];
 
-    // ── 4. display_name を解決（workouts は user_name で記録）──
+    // ── 4. display_name を解決 ──────────────────────────────────
     const { data: profiles } = await supabaseAdmin
       .from("profiles")
       .select("id, display_name")
@@ -158,71 +235,97 @@ export async function GET(req: NextRequest) {
       const name = nameMap.get(uid);
       return !name || !submittedNames.has(name);
     });
-
-    const allSubmitted = absentUserIds.length === 0;
+    const presentUserIds = activeUserIds.filter((uid) => !absentUserIds.includes(uid));
 
     log.push(
       `[${squad.name}] メンバー${activeUserIds.length}人 / ` +
-        `提出${submittedNames.size}人 / 未提出${absentUserIds.length}人`
+        `提出${presentUserIds.length}人 / 未提出${absentUserIds.length}人`
     );
 
-    if (allSubmitted) {
-      // ── 7a. 全員提出 → ストリーク +1 ─────────────────────────
+    // ── 7. フリーズ判定：未提出者のうちフリーズ発動者を分離 ────
+    const realAbsentIds: string[] = [];
+    for (const uid of absentUserIds) {
+      const name = nameMap.get(uid) ?? uid.slice(0, 8);
+      const userChallenges = activeChallenges.filter((c) => c.user_id === uid);
+      const hasFreezeActive = userChallenges.some((c) => c.freeze_active);
+
+      if (hasFreezeActive) {
+        // フリーズ消費：処刑スキップ
+        for (const c of userChallenges) {
+          if (c.freeze_active) {
+            await supabaseAdmin
+              .from("challenges")
+              .update({ freeze_active: false, freeze_consumed_at: new Date().toISOString() })
+              .eq("id", c.id);
+          }
+        }
+        log.push(`    [${name}] ❄️ フリーズ発動！処刑スキップ`);
+      } else {
+        realAbsentIds.push(uid);
+      }
+    }
+
+    // フリーズで全員セーフの場合は全員提出扱い
+    const allSafe = realAbsentIds.length === 0;
+
+    if (allSafe) {
+      // ── 8a. 全員提出（orフリーズ）→ ストリーク +1 ────────────
       const newStreak = (squad.current_streak ?? 0) + 1;
       await supabaseAdmin
         .from("squads")
         .update({ current_streak: newStreak })
         .eq("id", squad.id);
 
-      log.push(`  → ✅ 全員提出！streak ${squad.current_streak} → ${newStreak}`);
+      log.push(`  → ✅ 全員セーフ！streak ${squad.current_streak} → ${newStreak}`);
       results.push({ squad: squad.name, result: "streak_up", streak: newStreak });
     } else {
-      // ── 7b. 誰か未提出 → ストリークリセット ──────────────────
+      // ── 8b. 戦犯あり → ストリークリセット ──────────────────
       await supabaseAdmin
         .from("squads")
         .update({ current_streak: 0 })
         .eq("id", squad.id);
 
-      log.push(`  → ⚠️ 未提出者あり。streak ${squad.current_streak} → 0`);
+      log.push(`  → ⚠️ 戦犯あり。streak ${squad.current_streak} → 0`);
 
-      // ── 7c. 未提出者のチャレンジを failed に & デポジット没収 ──
-      for (const uid of absentUserIds) {
+      // ── 8c. 戦犯（未提出者）→ Capture（没収）+ failed ────────
+      for (const uid of realAbsentIds) {
         const name = nameMap.get(uid) ?? uid.slice(0, 8);
+        const userChallenges = activeChallenges.filter((c) => c.user_id === uid);
 
-        const { data: updated, error: updateErr } = await supabaseAdmin
+        await supabaseAdmin
           .from("challenges")
           .update({ status: "failed" })
           .eq("user_id", uid)
-          .eq("status", "active")
-          .select("id, deposit_amount, stripe_payment_intent_id");
+          .eq("status", "active");
 
-        if (updateErr) {
-          log.push(`    [${name}] challenge 更新エラー: ${updateErr.message}`);
-          continue;
+        for (const c of userChallenges) {
+          await captureDeposit(c.stripe_payment_intent_id, c.deposit_amount, uid, log, name);
         }
+        log.push(`    [${name}] ❌ 戦犯！チャレンジ failed、デポジット没収`);
+      }
 
-        // 各チャレンジのデポジットをCapture（没収）
-        for (const challenge of updated ?? []) {
-          await captureDeposit(
-            challenge.stripe_payment_intent_id,
-            challenge.deposit_amount,
-            uid,
-            log,
-            name
-          );
+      // ── 8d. 生存者（提出済み）→ Cancel（返金）+ failed ────────
+      for (const uid of presentUserIds) {
+        const name = nameMap.get(uid) ?? uid.slice(0, 8);
+        const userChallenges = activeChallenges.filter((c) => c.user_id === uid);
+
+        await supabaseAdmin
+          .from("challenges")
+          .update({ status: "failed" })
+          .eq("user_id", uid)
+          .eq("status", "active");
+
+        for (const c of userChallenges) {
+          await cancelDeposit(c.stripe_payment_intent_id, c.deposit_amount, uid, log, name);
         }
-
-        log.push(
-          `    [${name}] ❌ challenge failed: ${(updated ?? [])
-            .map((c) => `id=${c.id} ¥${c.deposit_amount}`)
-            .join(", ")}`
-        );
+        log.push(`    [${name}] 🔓 生存者！チャレンジ failed（連帯責任）、デポジット返金`);
       }
 
       results.push({
         squad: squad.name,
         result: "streak_reset",
-        absent: absentUserIds.map((uid) => nameMap.get(uid) ?? uid.slice(0, 8)),
+        criminals: realAbsentIds.map((uid) => nameMap.get(uid) ?? uid.slice(0, 8)),
+        survivors: presentUserIds.map((uid) => nameMap.get(uid) ?? uid.slice(0, 8)),
       });
     }
   }

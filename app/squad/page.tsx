@@ -12,6 +12,33 @@ import type { FCMStatus } from "@/hooks/useFCMToken";
 import { onMessage } from "firebase/messaging";
 import { getFirebaseMessaging } from "@/lib/firebase";
 import NotificationPermissionModal from "@/components/NotificationPermissionModal";
+import { loadStripe } from "@stripe/stripe-js";
+import {
+  Elements,
+  CardNumberElement,
+  CardExpiryElement,
+  CardCvcElement,
+  useStripe,
+  useElements,
+} from "@stripe/react-stripe-js";
+
+const stripePromise = loadStripe(
+  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
+);
+
+const STRIPE_ELEMENT_STYLE = {
+  style: {
+    base: {
+      color: "#f4f4f5",
+      fontFamily: '"Inter", system-ui, sans-serif',
+      fontSize: "15px",
+      fontSmoothing: "antialiased",
+      "::placeholder": { color: "#52525b" },
+      iconColor: "#a1a1aa",
+    },
+    invalid: { color: "#f87171", iconColor: "#f87171" },
+  },
+};
 
 interface Workout {
   id: string;
@@ -56,6 +83,142 @@ function calcTeamStreak(workouts: Workout[], memberNames: string[]): number {
   return streak;
 }
 
+// ── フリーズ購入モーダル内部（Stripe Elements内で使う）──
+function FreezeFormInner({
+  challengeId,
+  userId,
+  onSuccess,
+  onClose,
+}: {
+  challengeId: string;
+  userId: string;
+  onSuccess: () => void;
+  onClose: () => void;
+}) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [message, setMessage] = useState("");
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+    setStatus("loading");
+    setMessage("");
+
+    try {
+      // 1. PaymentIntent 作成
+      const res = await fetch("/api/stripe/purchase-freeze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challengeId, userId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? `APIエラー (${res.status})`);
+      }
+      const { clientSecret, paymentIntentId } = await res.json();
+
+      // 2. カード決済確定
+      const cardNumberElement = elements.getElement(CardNumberElement);
+      if (!cardNumberElement) throw new Error("カード情報が取得できませんでした");
+
+      const { error } = await stripe.confirmCardPayment(clientSecret, {
+        payment_method: {
+          card: cardNumberElement,
+          billing_details: { address: { country: "JP" } },
+        },
+      });
+      if (error) throw new Error(error.message ?? "決済に失敗しました");
+
+      // 3. フリーズ有効化
+      const confirmRes = await fetch("/api/stripe/confirm-freeze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challengeId, userId, paymentIntentId }),
+      });
+      if (!confirmRes.ok) {
+        const err = await confirmRes.json().catch(() => ({}));
+        throw new Error(err.error ?? "フリーズ有効化に失敗");
+      }
+
+      setStatus("success");
+      setMessage("フリーズが有効になりました！今日サボっても没収されません。");
+      setTimeout(() => onSuccess(), 1500);
+    } catch (err) {
+      setStatus("error");
+      setMessage(err instanceof Error ? err.message : "不明なエラー");
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
+      <div className="mx-4 w-full max-w-sm rounded-2xl border border-cyan-900/50 bg-zinc-950 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">❄️</span>
+            <h3 className="text-base font-black text-white">フリーズ購入</h3>
+          </div>
+          <button type="button" onClick={onClose} className="text-zinc-500 hover:text-zinc-300 text-lg">✕</button>
+        </div>
+
+        <div className="mb-4 rounded-xl border border-cyan-900/30 bg-cyan-950/20 px-4 py-3">
+          <p className="text-xs leading-relaxed text-cyan-400">
+            ¥500 で今日の未提出を免除できます。<br />
+            フリーズは1チャレンジにつき1回のみ使用可能です。
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">カード番号</label>
+            <div className="rounded-xl border border-zinc-700 bg-zinc-800/60 px-4 py-3 focus-within:border-cyan-500/60 transition-all">
+              <CardNumberElement options={STRIPE_ELEMENT_STYLE} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">有効期限</label>
+              <div className="rounded-xl border border-zinc-700 bg-zinc-800/60 px-4 py-3 focus-within:border-cyan-500/60 transition-all">
+                <CardExpiryElement options={STRIPE_ELEMENT_STYLE} />
+              </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">CVC</label>
+              <div className="rounded-xl border border-zinc-700 bg-zinc-800/60 px-4 py-3 focus-within:border-cyan-500/60 transition-all">
+                <CardCvcElement options={STRIPE_ELEMENT_STYLE} />
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={status === "loading" || !stripe || status === "success"}
+            className="mt-1 w-full rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 py-3 text-sm font-black text-white shadow-lg shadow-cyan-900/30 transition-all hover:brightness-110 active:scale-[0.97] disabled:opacity-50"
+          >
+            {status === "loading" ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                処理中...
+              </span>
+            ) : "❄️ ¥500 でフリーズを購入する"}
+          </button>
+        </form>
+
+        {message && (
+          <div className={`mt-3 rounded-xl border px-4 py-3 text-xs leading-relaxed ${
+            status === "success"
+              ? "border-emerald-700/50 bg-emerald-900/20 text-emerald-400"
+              : "border-red-700/50 bg-red-900/20 text-red-400"
+          }`}>
+            {status === "success" ? "✅ " : "❌ "}{message}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function SquadPage() {
   const router = useRouter();
   const { user, loading: authLoading, displayName } = useAuth();
@@ -77,6 +240,9 @@ export default function SquadPage() {
   const [showCelebration, setShowCelebration] = useState(false);
   const [celebrationStreak, setCelebrationStreak] = useState(0);
   const [hasActiveChallenge, setHasActiveChallenge] = useState<boolean | null>(null);
+  const [activeChallengeId, setActiveChallengeId] = useState<string | null>(null);
+  const [freezeActive, setFreezeActive] = useState(false);
+  const [showFreezeModal, setShowFreezeModal] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -97,7 +263,7 @@ export default function SquadPage() {
       supabase.from("squad_members").select("squad_id").eq("user_id", user.id),
       supabase
         .from("challenges")
-        .select("id")
+        .select("id, freeze_active")
         .eq("user_id", user.id)
         .eq("status", "active")
         .limit(1)
@@ -105,6 +271,8 @@ export default function SquadPage() {
     ]);
 
     setHasActiveChallenge(!!challengeResult.data);
+    setActiveChallengeId(challengeResult.data?.id ?? null);
+    setFreezeActive(!!challengeResult.data?.freeze_active);
 
     const { data: memberships, error: membershipError } = membershipsResult;
 
@@ -572,9 +740,25 @@ export default function SquadPage() {
                           ✅ 完了
                         </span>
                       ) : m.userId === user?.id ? (
-                        <span className="rounded-full border border-red-700/40 bg-red-900/20 px-2.5 py-1 text-[11px] font-bold text-red-400 animate-pulse">
-                          ⚠️ 未提出
-                        </span>
+                        <div className="flex flex-col items-end gap-1.5">
+                          <span className="rounded-full border border-red-700/40 bg-red-900/20 px-2.5 py-1 text-[11px] font-bold text-red-400 animate-pulse">
+                            ⚠️ 未提出
+                          </span>
+                          {activeChallengeId && !freezeActive && (
+                            <button
+                              type="button"
+                              onClick={() => setShowFreezeModal(true)}
+                              className="rounded-full border border-cyan-700/50 bg-cyan-900/20 px-2.5 py-1 text-[10px] font-bold text-cyan-400 transition-all hover:bg-cyan-900/40 active:scale-95"
+                            >
+                              ❄️ フリーズ購入 ¥500
+                            </button>
+                          )}
+                          {freezeActive && (
+                            <span className="rounded-full border border-cyan-700/40 bg-cyan-900/20 px-2.5 py-1 text-[10px] font-bold text-cyan-400">
+                              ❄️ フリーズ有効
+                            </span>
+                          )}
+                        </div>
                       ) : (
                         <div className="flex flex-col items-end gap-1">
                           <button
@@ -735,6 +919,22 @@ export default function SquadPage() {
           status={showNotifModal ? (fcmStatus === "subscribed" ? "subscribed" : fcmStatus === "ios_browser" ? "ios_browser" : "need_permission") : fcmStatus}
           onStatusChange={(s) => { setFcmStatus(s); setShowNotifModal(false); }}
         />
+      )}
+
+      {/* フリーズ購入モーダル */}
+      {showFreezeModal && activeChallengeId && user && (
+        <Elements stripe={stripePromise} options={{ locale: "ja" }}>
+          <FreezeFormInner
+            challengeId={activeChallengeId}
+            userId={user.id}
+            onSuccess={() => {
+              setShowFreezeModal(false);
+              setFreezeActive(true);
+              fetchWorkouts();
+            }}
+            onClose={() => setShowFreezeModal(false)}
+          />
+        </Elements>
       )}
 
       {/* 達成セレブレーション */}
