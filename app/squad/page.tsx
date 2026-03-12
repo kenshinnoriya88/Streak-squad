@@ -163,8 +163,9 @@ function FreezeFormInner({
         </div>
 
         <div className="mb-4 rounded-xl border border-cyan-900/30 bg-cyan-950/20 px-4 py-3">
-          <p className="text-xs leading-relaxed text-cyan-400">
-            ¥500 で今日の未提出を免除できます。<br />
+          <p className="text-sm font-bold text-cyan-300 mb-1">¥500 でフリーズできます</p>
+          <p className="text-xs leading-relaxed text-zinc-400">
+            今日の未提出を免除し、デポジット没収をスキップできます。<br />
             フリーズは1チャレンジにつき1回のみ使用可能です。
           </p>
         </div>
@@ -750,7 +751,7 @@ export default function SquadPage() {
                               onClick={() => setShowFreezeModal(true)}
                               className="rounded-full border border-cyan-700/50 bg-cyan-900/20 px-2.5 py-1 text-[10px] font-bold text-cyan-400 transition-all hover:bg-cyan-900/40 active:scale-95"
                             >
-                              ❄️ フリーズ購入 ¥500
+                              ❄️ フリーズ購入
                             </button>
                           )}
                           {freezeActive && (
