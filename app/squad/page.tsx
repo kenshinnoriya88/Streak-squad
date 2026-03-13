@@ -445,10 +445,12 @@ export default function SquadPage() {
       console.log("[Poke]", name, "→", body);
       if (!res.ok) {
         setPokeResults((prev) => new Map(prev).set(userId, "error"));
+        alert(`Pokeエラー: ${JSON.stringify(body)}`);
       } else if (body.sent === false) {
         setPokeResults((prev) => new Map(prev).set(userId, "no_sub"));
       } else {
         setPokeResults((prev) => new Map(prev).set(userId, "sent"));
+        alert(`Poke詳細: デバイス${body.totalDevices}台中${body.sentCount}台に送信\n${JSON.stringify(body.results)}`);
       }
     } catch (err) {
       console.warn("[handlePoke]", err);
