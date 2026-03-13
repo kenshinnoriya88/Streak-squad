@@ -20,16 +20,30 @@ export function useFCMToken(userId: string | undefined) {
   useEffect(() => {
     if (!userId) return;
 
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isStandalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true;
+
     if (!("Notification" in window) || !("serviceWorker" in navigator)) {
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-      if (isIOS) {
-        console.log("[FCM] iOS で Notification API 未対応（ホーム画面追加が必要）");
+      if (isIOS && !isStandalone) {
+        // iOS ブラウザ（PWA未追加）→ ホーム画面追加を案内
+        console.log("[FCM] iOS ブラウザ（PWA未追加）→ ホーム画面追加を案内");
         setStatus("ios_browser");
+      } else if (isIOS && isStandalone) {
+        // iOS PWA だけど Notification API がない → iOS 16.4未満
+        console.log("[FCM] iOS PWA だが Notification API なし（iOS 16.4未満の可能性）");
+        setStatus("unsupported");
       } else {
         console.log("[FCM] Notification API 未対応ブラウザ");
         setStatus("unsupported");
       }
       return;
+    }
+
+    // iOS PWA で Notification API がある場合はそのまま通常フローへ
+    if (isIOS && isStandalone) {
+      console.log("[FCM] iOS PWA（Notification API あり）→ 通常フロー");
     }
 
     if (Notification.permission === "denied") {
