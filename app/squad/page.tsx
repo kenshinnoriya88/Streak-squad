@@ -502,9 +502,15 @@ export default function SquadPage() {
           <div className="flex items-center gap-2">
             {/* 通知登録ステータス */}
             {fcmStatus === "subscribed" && (
-              <span className="rounded-full bg-emerald-900/30 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
-                🔔 通知ON
-              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  new Notification("テスト通知", { body: "Chromeの通知テストです" });
+                }}
+                className="rounded-full bg-emerald-900/30 px-2 py-0.5 text-[10px] font-bold text-emerald-400"
+              >
+                🔔 通知ON（タップでテスト）
+              </button>
             )}
             {(fcmStatus === "denied" || fcmStatus === "need_permission" || fcmStatus === "ios_browser" || fcmStatus === "unsupported" || fcmStatus === "error") && (
               <button
