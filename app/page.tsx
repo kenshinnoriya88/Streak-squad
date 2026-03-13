@@ -6,6 +6,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthProvider";
 import { calcStreakForUser } from "@/components/PersonalStreak";
+import { xpForNextLevel, getLevelTitle } from "@/lib/xp";
 
 // ── 型定義 ──
 interface Challenge {
@@ -272,10 +273,11 @@ function Dashboard() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [loading, setLoading] = useState(true);
   const [streak, setStreak] = useState(0);
+  const [xp, setXp] = useState(0);
 
   const fetchData = useCallback(async () => {
     if (!user) return;
-    const [challengeRes, workoutRes] = await Promise.all([
+    const [challengeRes, workoutRes, profileRes] = await Promise.all([
       supabase
         .from("challenges")
         .select("id, task_description, deposit_amount, status, created_at, freeze_active")
@@ -285,9 +287,15 @@ function Dashboard() {
         .from("workouts")
         .select("id, image_url, user_name, created_at")
         .order("created_at", { ascending: false }),
+      supabase
+        .from("profiles")
+        .select("xp")
+        .eq("id", user.id)
+        .single(),
     ]);
     setChallenges(challengeRes.data ?? []);
     setWorkouts(workoutRes.data ?? []);
+    setXp(profileRes.data?.xp ?? 0);
     setLoading(false);
   }, [user]);
 
@@ -346,6 +354,9 @@ function Dashboard() {
             {displayName?.charAt(0).toUpperCase() ?? "?"}
           </div>
           <span className="text-sm font-medium text-zinc-300">{displayName}</span>
+          <span className="rounded-md bg-purple-500/20 border border-purple-500/30 px-1.5 py-0.5 text-[10px] font-black text-purple-400">
+            Lv.{xpForNextLevel(xp).level}
+          </span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className={`text-xl ${streak > 0 ? "drop-shadow-[0_0_6px_rgba(249,115,22,0.6)]" : "opacity-30"}`}>🔥</span>
@@ -386,6 +397,45 @@ function Dashboard() {
             )}
           </div>
         </div>
+
+        {/* ── XP & レベル ── */}
+        {(() => {
+          const info = xpForNextLevel(xp);
+          const title = getLevelTitle(info.level);
+          return (
+            <div className="rounded-2xl border border-purple-900/50 bg-gradient-to-br from-purple-950/40 via-zinc-900/80 to-zinc-950 p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-purple-500/20 border border-purple-500/30">
+                    <span className="text-lg font-black text-purple-400">Lv.{info.level}</span>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-purple-400/80">{title}</p>
+                    <p className="text-xl font-black text-white">{xp.toLocaleString()} <span className="text-sm text-zinc-500">XP</span></p>
+                  </div>
+                </div>
+              </div>
+              {info.progress < 100 && (
+                <div>
+                  <div className="h-2.5 w-full rounded-full bg-zinc-800 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-purple-600 to-violet-500 transition-all duration-500"
+                      style={{ width: `${info.progress}%` }}
+                    />
+                  </div>
+                  <div className="mt-1.5 flex justify-between text-[10px] text-zinc-600">
+                    <span>Lv.{info.level}</span>
+                    <span>{xp - info.currentLevelXp} / {info.nextLevelXp - info.currentLevelXp} XP</span>
+                    <span>Lv.{info.level + 1}</span>
+                  </div>
+                </div>
+              )}
+              {info.progress >= 100 && (
+                <p className="text-center text-xs text-purple-400/60 font-bold">MAX LEVEL</p>
+              )}
+            </div>
+          );
+        })()}
 
         {/* ── ストリーク & 週間ヒートマップ ── */}
         <div className="rounded-2xl border border-orange-900/50 bg-gradient-to-br from-red-950/60 via-zinc-900/80 to-zinc-950 p-5">

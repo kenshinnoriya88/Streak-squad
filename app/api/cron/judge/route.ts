@@ -153,7 +153,13 @@ async function checkAndCompleteExpired(log: string[]) {
       name
     );
 
-    log.push(`[完走チェック] 🎉 [${name}] 30日完走！チャレンジ completed、デポジット ¥${challenge.deposit_amount} 返金`);
+    // 完走XP付与
+    await supabaseAdmin.rpc("increment_xp", {
+      user_id_param: challenge.user_id,
+      amount_param: 500,
+    });
+
+    log.push(`[完走チェック] 🎉 [${name}] 30日完走！チャレンジ completed、デポジット ¥${challenge.deposit_amount} 返金、+500 XP`);
   }
 }
 

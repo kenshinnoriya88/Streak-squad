@@ -245,6 +245,7 @@ export default function SquadPage() {
   const [freezeActive, setFreezeActive] = useState(false);
   const [showFreezeModal, setShowFreezeModal] = useState(false);
   const [toast, setToast] = useState<{ title: string; body: string } | null>(null);
+  const [xpToast, setXpToast] = useState<{ xp: number; leveledUp: boolean; level: number } | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -423,6 +424,27 @@ export default function SquadPage() {
       setCelebrationStreak(newStreak);
       setShowCelebration(true);
       fireConfetti();
+
+      // XP付与（ワークアウト提出）
+      if (user) {
+        fetch("/api/xp/grant", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: user.id, action: "workout_submit" }),
+        }).then((r) => r.json()).then((data) => {
+          if (data.xpGained) setXpToast({ xp: data.xpGained, leveledUp: data.leveledUp, level: data.level });
+        }).catch(() => {});
+
+        // ストリークマイルストーンXP
+        if (newStreak === 7 || newStreak === 14 || newStreak === 30) {
+          const action = `streak_${newStreak}` as string;
+          fetch("/api/xp/grant", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: user.id, action }),
+          }).catch(() => {});
+        }
+      }
     } catch (err) {
       alert(`❌ エラー\n${err instanceof Error ? err.message : "不明なエラー"}`);
     } finally {
@@ -447,6 +469,14 @@ export default function SquadPage() {
         setPokeResults((prev) => new Map(prev).set(userId, "no_sub"));
       } else {
         setPokeResults((prev) => new Map(prev).set(userId, "sent"));
+        // Poke XP
+        if (user) {
+          fetch("/api/xp/grant", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId: user.id, action: "poke" }),
+          }).catch(() => {});
+        }
       }
     } catch (err) {
       console.warn("[handlePoke]", err);
@@ -980,6 +1010,25 @@ export default function SquadPage() {
               </div>
               <span className="text-[10px] text-zinc-600">今</span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* XPトースト */}
+      {xpToast && (
+        <div
+          className="fixed left-1/2 bottom-28 z-[9999] -translate-x-1/2 animate-[floatUp_1.5s_ease-out_forwards]"
+          onAnimationEnd={() => setXpToast(null)}
+        >
+          <div className="flex flex-col items-center gap-1">
+            <span className="rounded-full bg-amber-500/20 border border-amber-500/40 px-4 py-2 text-sm font-black text-amber-400 shadow-lg shadow-amber-900/30 backdrop-blur-md">
+              +{xpToast.xp} XP
+            </span>
+            {xpToast.leveledUp && (
+              <span className="rounded-full bg-purple-500/20 border border-purple-500/40 px-3 py-1 text-xs font-black text-purple-400">
+                🎉 Lv.{xpToast.level} にレベルアップ！
+              </span>
+            )}
           </div>
         </div>
       )}

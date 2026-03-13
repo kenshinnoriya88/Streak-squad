@@ -122,6 +122,25 @@ body {
   animation: previewAppear 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* XP toast float up */
+@keyframes floatUp {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 0) scale(0.8);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -20px) scale(1.1);
+  }
+  40% {
+    transform: translate(-50%, -30px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -80px) scale(0.9);
+  }
+}
+
 /* Celebration modal pop animation */
 @keyframes slideDown {
   0% {
