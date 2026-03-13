@@ -361,22 +361,25 @@ export default function SquadPage() {
     if (fcmStatus !== "subscribed") return;
     const messaging = getFirebaseMessaging();
     if (!messaging) return;
-    const unsubscribe = onMessage(messaging, async (payload) => {
+    const unsubscribe = onMessage(messaging, (payload) => {
       console.log("[FCM] フォアグラウンド通知:", payload);
       const title = payload.notification?.title ?? "Streak Squad";
       const body = payload.notification?.body ?? "";
+      console.log("[FCM] 通知表示試行:", title, body);
       try {
-        const reg = await navigator.serviceWorker.ready;
-        await reg.showNotification(title, {
+        const n = new Notification(title, {
           body,
           icon: "/icon-192.png",
           tag: "poke",
-          renotify: true,
-          data: { url: "/squad" },
         });
-        console.log("[FCM] showNotification 成功");
+        console.log("[FCM] new Notification 成功:", n);
       } catch (err) {
-        console.error("[FCM] showNotification 失敗:", err);
+        console.error("[FCM] new Notification 失敗:", err);
+        // fallback: SW経由
+        navigator.serviceWorker.ready.then((reg) => {
+          reg.showNotification(title, { body, icon: "/icon-192.png", tag: "poke" });
+          console.log("[FCM] SW showNotification fallback 実行");
+        }).catch((e) => console.error("[FCM] SW fallback 失敗:", e));
       }
     });
     return () => unsubscribe();
