@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 // Firebase 公式 CDN バージョンと一致させる
-const FB_VER = "11.9.0";
+const FB_VER = "12.10.0";
 
 export async function GET() {
   const config = JSON.stringify({
