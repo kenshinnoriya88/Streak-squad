@@ -244,6 +244,7 @@ export default function SquadPage() {
   const [activeChallengeId, setActiveChallengeId] = useState<string | null>(null);
   const [freezeActive, setFreezeActive] = useState(false);
   const [showFreezeModal, setShowFreezeModal] = useState(false);
+  const [toast, setToast] = useState<{ title: string; body: string } | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace("/login");
@@ -362,24 +363,13 @@ export default function SquadPage() {
     const messaging = getFirebaseMessaging();
     if (!messaging) return;
     const unsubscribe = onMessage(messaging, (payload) => {
-      console.log("[FCM] フォアグラウンド通知:", payload);
       const title = payload.notification?.title ?? "Streak Squad";
       const body = payload.notification?.body ?? "";
-      console.log("[FCM] 通知表示試行:", title, body);
-      try {
-        const n = new Notification(title, {
-          body,
-          icon: "/icon-192.png",
-        });
-        console.log("[FCM] new Notification 成功:", n);
-      } catch (err) {
-        console.error("[FCM] new Notification 失敗:", err);
-        // fallback: SW経由
-        navigator.serviceWorker.ready.then((reg) => {
-          reg.showNotification(title, { body, icon: "/icon-192.png", tag: "poke" });
-          console.log("[FCM] SW showNotification fallback 実行");
-        }).catch((e) => console.error("[FCM] SW fallback 失敗:", e));
-      }
+      // アプリ内トースト表示
+      setToast({ title, body });
+      setTimeout(() => setToast(null), 4000);
+      // OS通知も試行
+      try { new Notification(title, { body, icon: "/icon-192.png" }); } catch {}
     });
     return () => unsubscribe();
   }, [fcmStatus]);
@@ -453,12 +443,10 @@ export default function SquadPage() {
       console.log("[Poke]", name, "→", body);
       if (!res.ok) {
         setPokeResults((prev) => new Map(prev).set(userId, "error"));
-        alert(`Pokeエラー: ${JSON.stringify(body)}`);
       } else if (body.sent === false) {
         setPokeResults((prev) => new Map(prev).set(userId, "no_sub"));
       } else {
         setPokeResults((prev) => new Map(prev).set(userId, "sent"));
-        alert(`Poke詳細: デバイス${body.totalDevices}台中${body.sentCount}台に送信\n${JSON.stringify(body.results)}`);
       }
     } catch (err) {
       console.warn("[handlePoke]", err);
@@ -510,15 +498,9 @@ export default function SquadPage() {
           <div className="flex items-center gap-2">
             {/* 通知登録ステータス */}
             {fcmStatus === "subscribed" && (
-              <button
-                type="button"
-                onClick={() => {
-                  new Notification("テスト通知", { body: "Chromeの通知テストです" });
-                }}
-                className="rounded-full bg-emerald-900/30 px-2 py-0.5 text-[10px] font-bold text-emerald-400"
-              >
-                🔔 通知ON（タップでテスト）
-              </button>
+              <span className="rounded-full bg-emerald-900/30 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+                🔔 通知ON
+              </span>
             )}
             {(fcmStatus === "denied" || fcmStatus === "need_permission" || fcmStatus === "ios_browser" || fcmStatus === "unsupported" || fcmStatus === "error") && (
               <button
@@ -979,6 +961,25 @@ export default function SquadPage() {
             >
               🎉 やったね！
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* トースト通知 */}
+      {toast && (
+        <div
+          className="fixed left-4 right-4 top-4 z-[9999] animate-[slideDown_0.3s_ease-out] cursor-pointer"
+          onClick={() => setToast(null)}
+        >
+          <div className="mx-auto max-w-sm rounded-2xl border border-orange-500/40 bg-zinc-950/95 px-4 py-3 shadow-2xl shadow-orange-900/30 backdrop-blur-md">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">👊</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-white truncate">{toast.title}</p>
+                <p className="text-xs text-zinc-400 truncate">{toast.body}</p>
+              </div>
+              <span className="text-[10px] text-zinc-600">今</span>
+            </div>
           </div>
         </div>
       )}
