@@ -361,16 +361,22 @@ export default function SquadPage() {
     if (fcmStatus !== "subscribed") return;
     const messaging = getFirebaseMessaging();
     if (!messaging) return;
-    const unsubscribe = onMessage(messaging, (payload) => {
+    const unsubscribe = onMessage(messaging, async (payload) => {
       console.log("[FCM] フォアグラウンド通知:", payload);
       const title = payload.notification?.title ?? "Streak Squad";
       const body = payload.notification?.body ?? "";
-      if (Notification.permission === "granted") {
-        new Notification(title, {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        await reg.showNotification(title, {
           body,
           icon: "/icon-192.png",
           tag: "poke",
+          renotify: true,
+          data: { url: "/squad" },
         });
+        console.log("[FCM] showNotification 成功");
+      } catch (err) {
+        console.error("[FCM] showNotification 失敗:", err);
       }
     });
     return () => unsubscribe();
