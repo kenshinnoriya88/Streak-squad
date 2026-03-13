@@ -94,7 +94,7 @@ export default function Home() {
             </h2>
             <p className="mx-auto max-w-xs text-base leading-relaxed text-zinc-400">
               3,000円を賭けろ。<br />
-              毎日やるか、仲間に没収されるか。<br />
+              毎日やるか、没収されるか。<br />
               <span className="text-zinc-500">それだけのシンプルなルール。</span>
             </p>
           </div>

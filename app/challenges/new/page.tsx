@@ -46,7 +46,7 @@ export default function NewChallengePage() {
           <p className="text-sm text-zinc-400">
             目標を宣言し、デポジットで退路を断て。
             <br />
-            サボれば仲間に没収される。
+            サボればデポジットは没収される。
           </p>
         </div>
 
