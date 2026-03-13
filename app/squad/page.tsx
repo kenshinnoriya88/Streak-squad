@@ -498,14 +498,6 @@ export default function SquadPage() {
             {squadInfo ? `👥 ${squadInfo.name}` : "👥 スクワッド"}
           </span>
           <div className="flex items-center gap-2">
-            {/* デバッグ: FCMステータス */}
-            <span className="rounded bg-zinc-800 px-1 py-0.5 text-[8px] text-yellow-400 font-mono leading-relaxed">
-              {fcmStatus} |
-              SA:{typeof window !== "undefined" && (navigator as Navigator & { standalone?: boolean }).standalone ? "Y" : "N"} |
-              DM:{typeof window !== "undefined" && window.matchMedia("(display-mode: standalone)").matches ? "Y" : "N"} |
-              NT:{"Notification" in (typeof window !== "undefined" ? window : {}) ? "Y" : "N"} |
-              SW:{"serviceWorker" in navigator ? "Y" : "N"}
-            </span>
             {/* 通知登録ステータス */}
             {fcmStatus === "subscribed" && (
               <span className="rounded-full bg-emerald-900/30 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
