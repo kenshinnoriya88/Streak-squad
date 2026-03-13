@@ -370,7 +370,6 @@ export default function SquadPage() {
         const n = new Notification(title, {
           body,
           icon: "/icon-192.png",
-          tag: "poke",
         });
         console.log("[FCM] new Notification 成功:", n);
       } catch (err) {
